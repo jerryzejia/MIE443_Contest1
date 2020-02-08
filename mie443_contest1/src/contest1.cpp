@@ -11,6 +11,9 @@
 #include <nav_msgs/Odometry.h>
 #include <tf/transform_datatypes.h>
 
+#define RAD2DEG(rad)((rad)*180./M_PI)
+#define DEG2RAD(deg)((deg) *M_PI /180.)
+
 using namespace std;
 
 //Define Global Variables
@@ -24,11 +27,17 @@ bool bumperLeft = 0, bumperCenter = 0, bumperRight = 0;
 //Define Laser Ranges
 double laserRange = 10;
 double laserRange_Left = 10, laserRange_Right = 10;
-int laserSize = 0, laserOffset = 0, desiredAngle = 15;
+int nLasers = 0, desiredNLasers = 0, desiredAngle = 15;
 int right_ind = 0, left_ind = 0;
 int spin_counter = 0;
 double x_turn = 0, y_turn = 0;
 double x_last = 0, y_last = 0;
+
+enum Bumper{
+    Left = 0;
+    Center = 1;
+    Right = 2;
+};
 
 //Rotation function - with given degree and direction.
 //When the degree input is 360, the robot will rotate until all the three laser ranges are greater than 0.5
@@ -55,7 +64,7 @@ void rotate(float degree, char direction)
     //Define 360 degree rotation
     if (degree == 360)
     {
-        while (laserRange < 0.7 || laserRange_Left < 0.5 || laserRange_Right < 0.5)
+        while (laserRange < 0.5 || laserRange_Left < 0.5 || laserRange_Right < 0.5)
         {
             vel.angular.z = angular;
             vel.linear.x = linear;
@@ -74,6 +83,7 @@ void rotate(float degree, char direction)
         }
     }
 }
+
 //Correction function - the robot will rotate 360 degrees first. Then it will rotate to the direction that has the most space.
 //The robot should choose direction on its left or right side prior to the front side. Also, the robot will not turn back.
 void correction()
@@ -149,21 +159,12 @@ void bumperCallback(const kobuki_msgs::BumperEvent msg)
 //Laser call back function
 void laserCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
 {
-    //laserSize is 639 increments
-    laserSize = (msg->angle_max - msg->angle_min) / msg->angle_increment;
-    laserOffset = desiredAngle * pi / (180 * msg->angle_increment);
-
-    //Print laser scan info
-    //ROS_INFO("Size of laser scan array: %i and size of offset: %i", laserSize,laserOffset);
-    //laserOffset is offset from center in both directions for laserRange
-
-    //Define maximum laser range
+    nLasers = (msg->angle_max - msg->angle_min) / msg->angle_increment; //639
+    desiredNLasers = DEG2RAD(desiredAngle) / msg->angle_increment);
     laserRange = 11;
-    //Determine if the desired angle is lower than the laser angle
-    if (desiredAngle * pi / 180 < msg->angle_max && -desiredAngle * pi / 180 > msg->angle_min)
+    if (desiredAngle * M_PI / 180 < msg->angle_max && -desiredAngle * M_PI / 180 > msg->angle_min)
     {
-        //Update front range
-        for (int i = laserSize / 2 - laserOffset; i < laserSize / 2 + laserOffset; i++)
+        for (int i = nLasers/ 2 - desiredNLasers; i < nLasers/ 2 + desiredNLasers; i++)
         {
             if (laserRange > msg->ranges[i])
                 laserRange = msg->ranges[i];
@@ -171,14 +172,14 @@ void laserCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
         //Update left/right range by getting the minimum reading in the corresponding zone
         laserRange_Left = 11;
         laserRange_Right = 11;
-        for (int i = 0; i < laserOffset; i++)
+        for (int i = 0; i < desiredNLasers; i++)
         {
             if (laserRange_Right > msg->ranges[i])
                 laserRange_Right = msg->ranges[i];
             right_ind = i;
-            if (laserRange_Left > msg->ranges[laserSize - 1 - i])
-                laserRange_Left = msg->ranges[laserSize - 1 - i];
-            left_ind = laserSize - 1 - i;
+            if (laserRange_Left > msg->ranges[nLasers- 1 - i])
+                laserRange_Left = msg->ranges[nLasers- 1 - i];
+            left_ind = nLasers- 1 - i;
         }
     }
     else
@@ -201,12 +202,11 @@ void laserCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
 //odometry call back function
 void odomCallback(const nav_msgs::Odometry::ConstPtr &msg)
 {
-    //Read Info from odom
     posX = msg->pose.pose.position.x;
     posY = msg->pose.pose.position.y;
     yaw = tf::getYaw(msg->pose.pose.orientation);
-    //ROS_INFO("Position:(%f,%f) Orientation: %f Rad or %f degrees.",posX,posY,yaw,yaw*180/pi);
 }
+
 
 int main(int argc, char **argv)
 {
@@ -214,8 +214,8 @@ int main(int argc, char **argv)
     int mode = 1;
 
     //Offset Calculation
-    int left_ind_offset = left_ind - ((laserSize - 1) / 2);
-    int right_ind_offset = ((laserSize - 1) / 2) - right_ind;
+    int left_ind_offset = left_ind - ((nLasers- 1) / 2);
+    int right_ind_offset = ((nLasers- 1) / 2) - right_ind;
 
     //ROS setup
     ros::init(argc, argv, "image_listener");
@@ -250,7 +250,9 @@ int main(int argc, char **argv)
         //Mode switch - 120-240s mode 1, else mode 2
         //Mode 1 - goes straight, stop when front range is too low.
         //Mode 2 - corrects the distance when it is going straight. Run correction function after it has passed a certain distance
-        if (secondsElapsed > 120 && secondsElapsed < 240)
+        ros::spinOnce();
+        if (secondsElapsed > 0 && secondsElapsed < 60||secondsElapsed > 120 && secondsElapsed < 240 ||
+                secondsElapsed > 300 && secondsElapsed < 360)
         {
             mode = 1;
         }
@@ -261,8 +263,6 @@ int main(int argc, char **argv)
 
         if (mode == 2)
         {
-
-            //In mode 2 Print information
             ROS_INFO("LeftRange:%f,RightRange: %f", laserRange_Left, laserRange_Right);
         }
 
@@ -274,31 +274,12 @@ int main(int argc, char **argv)
             correction();
         }
 
-        //Print Robot Info
-        //ROS_INFO("Position:(%f,%f) Orientation: %f degrees. Range: %f,", posX, posY, yaw * 180 / pi, laserRange);
-        //ROS_INFO("Range:%f", laserRange);
-        //ROS_INFO("LeftIndex:%f,RightIndex: %f",left_ind, right_ind);
 
         ros::spinOnce();
 
         //.....**E-STOP DO NOT TOUCH**.......
         eStop.block();
         //...................................
-
-        //Distance between correction - Newer counter (used for testing purposes in smaller maze)
-        /*x_turn = x_turn + abs(posX - x_last);
-        y_turn = y_turn + abs(posY - y_last);
-        x_last = posX;
-        y_last = posY;
-        if (sqrt((x_turn * x_turn) + (y_turn * y_turn)) > 1.5 && mode == 2)
-        {
-            x_turn = 0;
-            y_turn = 0;
-            correction();
-        }*/
-
-        //max velocity=0.25, angular velocity=pi/6
-        //Bumper check
         if (bumperRight || bumperCenter || bumperLeft)
         {
             int bump = 0;
