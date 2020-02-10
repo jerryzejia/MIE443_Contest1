@@ -32,6 +32,7 @@ double laserRangeLeft = 11, laserRangeRight = 11;
 int nLasers = 0, desiredNLasers = 0, desiredAngle = 15;
 int rightIndex = 0, leftIndex = 0;
 int spin_counter = 0;
+
 double xLastSpin = 0, yLastSpin = 0;
 
 //Rotation function - with given degree and direction.
@@ -40,7 +41,7 @@ void rotate(float degree, char direction)
 {
     //Define rad
     double rad;
-    rad = degree * pi / 180;
+    rad = DEG2RAD(degree);
 
     //Update status
     ros::spinOnce();
@@ -105,6 +106,9 @@ void correction()
             {
                 max_reading_forward = laserRange;
                 max_ind_forward = i;
+                ROS_INFO("max_index_forward: %d", laserRange);
+                ROS_INFO("max_index_forward_index: %d", i);
+
             }
         }
             //Size of the left/right zone
@@ -114,6 +118,9 @@ void correction()
             {
                 max_reading_side = laserRange;
                 max_ind_side = i;
+                ROS_INFO("max_reading_side: %d", laserRange);
+                ROS_INFO("max_index_side: %d", i);
+
             }
         }
         rotate(360 / directions, 'r');
@@ -260,7 +267,6 @@ int main(int argc, char **argv)
     //Initial Mode
     //Distance Counter Setup
     correction();
-
     while (ros::ok() && secondsElapsed <= 480)
     {
         //Mode switch - 120-240s mode 1, else mode 2
@@ -269,7 +275,7 @@ int main(int argc, char **argv)
         mode = ((secondsElapsed > 0 && secondsElapsed < 60) || (secondsElapsed > 120 && secondsElapsed < 180) ||
                 (secondsElapsed > 420 && secondsElapsed < 480)) ? 1 : 2;
 
-        if ((distFromLastSpin() > 1.5 && mode == 2) || (distFromLastSpin() > 5 && mode == 1)){
+        if ((distFromLastSpin() > 2.5 && mode == 2) || (distFromLastSpin() > 7 && mode == 1)){
             xLastSpin = posX;
             yLastSpin = posY;
             correction();
@@ -293,9 +299,9 @@ int main(int argc, char **argv)
             lastX = posX;
             lastY = posY;
             //Moving Back
-            linear = -0.1;
+            linear = -0.2;
             angular = 0;
-            while (distFromLastLocation() < 0.2)
+            while (distFromLastLocation() < 0.15)
             {
                 vel.angular.z = angular;
                 vel.linear.x = linear;
@@ -308,10 +314,10 @@ int main(int argc, char **argv)
             else if (bumperLeft)
                 rotate(20, 'r');
             //Moving Forward
-            linear = 0.1;
+            linear = 0.2;
             lastX = posX;
             lastY = posY;
-            while (distFromLastLocation() < 0.2)
+            while (distFromLastLocation() < 0.15)
             {
                 vel.angular.z = angular;
                 vel.linear.x = linear;
@@ -326,9 +332,9 @@ int main(int argc, char **argv)
                 rotate(20, 'l');
         }
 
-        //Free Space movement
-        //Difference between mode 1 and 2
-        if (!isBumperPressed() && laserRange > 0.7){
+            //Free Space movement
+            //Difference between mode 1 and 2
+        else if (!isBumperPressed() && laserRange > 0.7){
             if (mode == 1) //Define mode 1
             {
                 //Define mode 1 speed
@@ -361,8 +367,10 @@ int main(int argc, char **argv)
             }
         }
             //When the front sensor reading is too low
+
         else if (!isBumperPressed() && laserRange < 0.5)
         {
+            ROS_INFO("stuck in else if statement")
             //Determine which side has more space
             if (laserRangeRight > laserRangeLeft)
             {
@@ -373,8 +381,10 @@ int main(int argc, char **argv)
                 rotate(360, 'l');
             }
         }
+
         else
         {
+            ROS_INFO("stuck in else statement")
             //Tries to stabilize robot when close to hitting wall
             if (laserRangeLeft - laserRangeRight > 0.2)
                 angular = (laserRangeLeft - laserRangeRight) / laserRangeLeft * (0.75 * ANGULAR_MAX);
