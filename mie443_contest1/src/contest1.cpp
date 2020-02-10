@@ -19,21 +19,19 @@ using namespace std;
 
 //Define Global Variables
 double posX, posY, yaw, yaw_now;
-
+double xLastSpin = 0, yLastSpin = 0;
 double lastX, lastY;
 double pi = 3.1416;
 //Define Maximum Speed
 double LINEAR_MAX = 0.25;
 double ANGULAR_MAX = pi / 6;
+// Define Boolean for bumper
 bool bumperLeft = 0, bumperCenter = 0, bumperRight = 0;
 //Define Laser Ranges
 double laserRange = 11;
 double laserRangeLeft = 11, laserRangeRight = 11;
 int nLasers = 0, desiredNLasers = 0, desiredAngle = 15;
 int rightIndex = 0, leftIndex = 0;
-int spin_counter = 0;
-
-double xLastSpin = 0, yLastSpin = 0;
 
 //Rotation function - with given degree and direction.
 //When the degree input is 360, the robot will rotate until all the three laser ranges are greater than 0.5
@@ -85,13 +83,13 @@ void rotate(float degree, char direction)
 void correction()
 {
     //Define the number of increments in the 360-degree rotation
-    int directions = 24;
+    int directions = 360 / desiredAngle;
     //Define variables to store maximum value
-    int max_ind_forward = 0;
-    int max_ind_side = 0;
-    double max_reading_forward = 0;
-    double max_reading_side = 0;
-    int max_index = 0;
+    int maxIndexForward = 0;
+    int maxIndexSide = 0;
+    double maxReadingForward = 0;
+    double maxReadingSide = 0;
+    int maxIndex = 0;
 
     //Get the max index
     for (int i = 0; i < directions; i++)
@@ -102,10 +100,10 @@ void correction()
         //Size of forward zone
         if (i < directions / 8 || i > directions * 7 / 8)
         {
-            if (laserRange > max_reading_forward)
+            if (laserRange > maxReadingForward)
             {
-                max_reading_forward = laserRange;
-                max_ind_forward = i;
+                maxReadingForward = laserRange;
+                maxIndexForward = i;
                 ROS_INFO("max_index_forward: %d", laserRange);
                 ROS_INFO("max_index_forward_index: %d", i);
 
@@ -114,11 +112,11 @@ void correction()
             //Size of the left/right zone
         else if ((i >= directions / 8 && i <= directions * 3 / 8) || (i >= directions * 5 / 8 && i <= directions * 7 / 8))
         {
-            if (laserRange > max_reading_side)
+            if (laserRange > maxReadingSide)
             {
-                max_reading_side = laserRange;
-                max_ind_side = i;
-                ROS_INFO("max_reading_side: %d", laserRange);
+                maxReadingSide = laserRange;
+                maxIndexSide = i;
+                ROS_INFO("maxReadingSide: %d", laserRange);
                 ROS_INFO("max_index_side: %d", i);
 
             }
@@ -127,23 +125,23 @@ void correction()
     }
 
     //Determine if it can go left/right. If not, go to the direction in forward zone
-    if (max_reading_side > 1.0)
+    if (maxReadingSide > 1.0)
     {
-        max_index = max_ind_side;
+        maxIndex = maxIndexSide;
     }
     else
     {
-        max_index = max_ind_forward;
+        maxIndex = maxIndexForward;
     }
 
     //Determine the direction and rotate
-    if (max_index < directions / 2)
+    if (maxIndex < directions / 2)
     {
-        rotate(360 * max_index / directions, 'r');
+        rotate(360 * maxIndex / directions, 'r');
     }
     else
     {
-        rotate(360 * (directions - max_index) / directions, 'l');
+        rotate(360 * (directions - maxIndex) / directions, 'l');
     }
 }
 
@@ -184,21 +182,21 @@ void laserCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
         laserRangeRight = 11;
         for (int i = 0; i < desiredNLasers; i++)
         {
-
-            if (laserRangeRight > msg->ranges[i])
+            if (laserRangeRight > msg->ranges[i]) {
                 laserRangeRight = msg->ranges[i];
-            rightIndex = i;
-            if (laserRangeLeft > msg->ranges[nLasers - 1 - i])
+                rightIndex = i;
+            }
+            if (laserRangeLeft > msg->ranges[nLasers - 1 - i]) {
                 laserRangeLeft = msg->ranges[nLasers - 1 - i];
-            leftIndex = nLasers - 1 - i;
+                leftIndex = nLasers - 1 - i;
+            }
         }
     }
     else
     {
         for (int i = 0; i < nLasers; i++)
         {
-            if (laserRange > msg->ranges[i])
-                laserRange = msg->ranges[i];
+            minLaserDist = std::min(minLaserDist, msg->ranges[i]);
         }
     }
     laserRange = minLaserDist;
@@ -400,9 +398,7 @@ int main(int argc, char **argv)
             else if (0.55 < laserRange <= 0.6)
                 linear = 0.5 * LINEAR_MAX;
             else if (0.5 <= laserRange <= 0.55)
-                linear = 0.3 * LINEAR_MAX;
-            else
-                linear = 0.8 * LINEAR_MAX;
+                linear = 0.2 * LINEAR_MAX;
         }
 
         //write the defined speed to the robot
