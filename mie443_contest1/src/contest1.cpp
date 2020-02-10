@@ -104,7 +104,7 @@ void correction()
             {
                 maxReadingForward = laserRange;
                 maxIndexForward = i;
-                ROS_INFO("max_index_forward: %d", laserRange);
+                ROS_INFO("max_index_forward: %f", maxReadingForward);
                 ROS_INFO("max_index_forward_index: %d", i);
 
             }
@@ -116,7 +116,7 @@ void correction()
             {
                 maxReadingSide = laserRange;
                 maxIndexSide = i;
-                ROS_INFO("maxReadingSide: %d", laserRange);
+                ROS_INFO("maxReadingSide: %f", maxReadingSide);
                 ROS_INFO("max_index_side: %d", i);
 
             }
@@ -265,6 +265,9 @@ int main(int argc, char **argv)
     //Initial Mode
     //Distance Counter Setup
     correction();
+    xLastSpin = posX;
+    yLastSpin = posY;
+
     while (ros::ok() && secondsElapsed <= 480)
     {
         //Mode switch - 120-240s mode 1, else mode 2
@@ -352,11 +355,14 @@ int main(int argc, char **argv)
                     angular = (laserRangeRight - laserRangeLeft) / laserRangeRight * (-0.5 * ANGULAR_MAX);
 
                 //Determines where distance values on both sides are located, and if a large discrepancy, turns
-                if (leftIndexOffset + 100 < rightIndexOffset)
+                if (leftIndexOffset + 100 < rightIndexOffset){
+                    ROS_INFO("changing offset to left");
                     angular = ANGULAR_MAX;
-                else if (rightIndexOffset + 100 < leftIndexOffset)
+                }
+                else if (rightIndexOffset + 100 < leftIndexOffset){
+                    ROS_INFO("changing offset to right");
                     angular = -ANGULAR_MAX;
-
+                }
                 //Overwrite the angular speed when it is too close to wall
                 if (laserRangeLeft < 0.5)
                     angular = -ANGULAR_MAX;
@@ -368,7 +374,7 @@ int main(int argc, char **argv)
 
         else if (!isBumperPressed() && laserRange < 0.5)
         {
-            ROS_INFO("stuck in else if statement")
+            ROS_INFO("stuck in else if statement");
             //Determine which side has more space
             if (laserRangeRight > laserRangeLeft)
             {
@@ -382,7 +388,7 @@ int main(int argc, char **argv)
 
         else
         {
-            ROS_INFO("stuck in else statement")
+            ROS_INFO("stuck in else statement");
             //Tries to stabilize robot when close to hitting wall
             if (laserRangeLeft - laserRangeRight > 0.2)
                 angular = (laserRangeLeft - laserRangeRight) / laserRangeLeft * (0.75 * ANGULAR_MAX);
