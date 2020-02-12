@@ -23,13 +23,13 @@ double xLastSpin = 0, yLastSpin = 0;
 double lastX, lastY;
 double pi = 3.1416;
 //Define Maximum Speed
-double LINEAR_MAX = 0.21;
+double LINEAR_MAX = 0.2;
 double LINEAR_MAX_NEAR_OBSTACLE = 0.1;
 double ANGULAR_MAX = pi / 6;
 // Define Boolean for bumper
 bool bumperLeft = 0, bumperCenter = 0, bumperRight = 0;
 //Define Laser Ranges
-double laserRange = 10, laserRangeLeft = 10, laserRangeRight = 10;
+double laserRange = 11, laserRangeLeft = 11, laserRangeRight = 11;
 int nLasers = 0, desiredNLasers = 0, desiredAngle = 15;
 int rightIndex = 0, leftIndex = 0;
 
@@ -179,16 +179,11 @@ void laserCallback(const sensor_msgs::LaserScan::ConstPtr &msg)
         for (int i = 0; i < nLasers; i++)
         {
             minLaserDist = std::min(minLaserDist, msg->ranges[i]);
+            laserRangeRight = 0;
+            laserRangeLeft = 0;
         }
     }
     laserRange = minLaserDist;
-    //Clear Out of Range readings
-    if (laserRange == 11)
-        laserRange = 0;
-    if (laserRangeLeft == 11)
-        laserRangeLeft = 0;
-    if (laserRangeRight == 11)
-        laserRangeRight = 0;
 }
 
 //odometry call back function
@@ -257,7 +252,8 @@ int main(int argc, char **argv)
         mode = ((secondsElapsed > 20 && secondsElapsed < 60) ||(secondsElapsed > 120 && secondsElapsed < 180) || (secondsElapsed > 240 && secondsElapsed < 300) ||
                 (secondsElapsed > 420 && secondsElapsed < 480)) ? 1 : 2;
 
-        if ((distFromLastSpin() > 2 && mode == 2) || (distFromLastSpin() > 5 && mode == 1)){
+        double threshold = rand() % 1 +  3;
+        if ((distFromLastSpin() > threshold && mode == 2) || (distFromLastSpin() > (threshold + 1) * 2 && mode == 1)){
             xLastSpin = posX;
             yLastSpin = posY;
             correction();
@@ -265,9 +261,7 @@ int main(int argc, char **argv)
 
 
         //Print Robot Info
-        ROS_INFO("Position:(%f,%f) Orientation: %f degrees. Range: %f,", posX, posY, yaw * 180 / pi, laserRange);
-        ROS_INFO("Range:%f", laserRange);
-        ROS_INFO("LeftIndex:%f,RightIndex: %f",leftIndex, rightIndex);
+        ROS_INFO("Mode: %d", mode);
 
         ros::spinOnce();
 
@@ -275,47 +269,51 @@ int main(int argc, char **argv)
         eStop.block();
         //...................................
 
-        if (isBumperPressed())
-        {
+        if (isBumperPressed() || isinf(laserRange)){
+            uint64_t secondsElapsedLast = secondsElapsed;
             ROS_INFO("bumping");
             lastX = posX;
             lastY = posY;
             //Moving Back
             linear = -LINEAR_MAX_NEAR_OBSTACLE;
             angular = 0;
-            while (distFromLastLocation() < 0.1)
+            while (distFromLastLocation() < 0.1 && (secondsElapsed - secondsElapsedLast) < 8)
             {
                 vel.angular.z = angular;
                 vel.linear.x = linear;
                 vel_pub.publish(vel);
                 ros::spinOnce();
+                secondsElapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - start).count();
             }
             linear = 0;
             ROS_INFO("calling rotation");
 
             if (bumperRight){
-                rotate(20, 'l');
+                rotate(25, 'l');
             }
             else if (bumperLeft){
-                rotate(20, 'r');
+                rotate(25, 'r');
             }
             else{
                 if(laserRangeLeft > laserRangeRight){
-                    rotate(20, 'l');
+                    rotate(90, 'l');
                 } else{
-                    rotate(20, 'r');
+                    rotate(90, 'r');
                 }
             }
             //Moving Forward
             linear = LINEAR_MAX_NEAR_OBSTACLE;
             lastX = posX;
             lastY = posY;
-            while (distFromLastLocation() < 0.15)
+            secondsElapsedLast = secondsElapsed;
+            while (distFromLastLocation() < 0.15 && (secondsElapsed - secondsElapsedLast) < 8)
             {
                 vel.angular.z = angular;
                 vel.linear.x = linear;
                 vel_pub.publish(vel);
                 ros::spinOnce();
+                secondsElapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - start).count();
+
             }
             linear = 0;
             //going back to the initial direction
@@ -334,8 +332,8 @@ int main(int argc, char **argv)
                 //Define mode 1 speed
                 linear = LINEAR_MAX;
                 //Correction when it is too close to walls
-                angular = (laserRangeLeft < 0.5) ? -ANGULAR_MAX  : 0 ;
-                angular = (laserRangeRight < 0.5) ? ANGULAR_MAX  : 0 ;
+                angular = (laserRangeLeft < 0.3) ? -ANGULAR_MAX  : 0 ;
+                angular = (laserRangeRight < 0.3) ? ANGULAR_MAX  : 0 ;
 
             }
             else if (mode == 2){
@@ -346,9 +344,9 @@ int main(int argc, char **argv)
 
                 //Overwrite the angular speed when the distances from two sides are different more than 0.2
                 if (laserRangeLeft - laserRangeRight > 0.2)
-                    angular = (laserRangeLeft - laserRangeRight) / laserRangeLeft * (0.5 * ANGULAR_MAX);
+                    angular = (laserRangeLeft - laserRangeRight) / laserRangeLeft * (0.75 * ANGULAR_MAX);
                 else if (laserRangeRight - laserRangeLeft > 0.2)
-                    angular = (laserRangeRight - laserRangeLeft) / laserRangeRight * (-0.5 * ANGULAR_MAX);
+                    angular = (laserRangeRight - laserRangeLeft) / laserRangeRight * (-0.75 * ANGULAR_MAX);
 
                 ROS_INFO("Index Offset %d, %d", leftIndexOffset, rightIndexOffset);
                 ROS_INFO("Index %d, %d", leftIndex, rightIndex);
@@ -402,10 +400,10 @@ int main(int argc, char **argv)
 
             //More gradual deceleration, can be extended for more gradual deceleration, more predictable than just
             //decreasing by constant value until close to wall (previous method)
-            if (0.6 < laserRange <= 0.65)
-                linear = 0.65 * LINEAR_MAX;
+            if (0.6 < laserRange <= 0.7)
+                linear = 0.75 * LINEAR_MAX;
             else if (0.55 < laserRange <= 0.6)
-                linear = 0.5 * LINEAR_MAX;
+                linear = 0.6 * LINEAR_MAX;
             else if (0.5 <= laserRange <= 0.55)
                 linear = LINEAR_MAX_NEAR_OBSTACLE;
         }
