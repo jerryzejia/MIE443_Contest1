@@ -23,13 +23,13 @@ double xLastSpin = 0, yLastSpin = 0;
 double lastX, lastY;
 double pi = 3.1416;
 //Define Maximum Speed
-double LINEAR_MAX = 0.25;
+double LINEAR_MAX = 0.21;
+double LINEAR_MAX_NEAR_OBSTACLE = 0.1;
 double ANGULAR_MAX = pi / 6;
 // Define Boolean for bumper
 bool bumperLeft = 0, bumperCenter = 0, bumperRight = 0;
 //Define Laser Ranges
-double laserRange = 11;
-double laserRangeLeft = 11, laserRangeRight = 11;
+double laserRange = 10, laserRangeLeft = 10, laserRangeRight = 10;
 int nLasers = 0, desiredNLasers = 0, desiredAngle = 15;
 int rightIndex = 0, leftIndex = 0;
 
@@ -41,7 +41,6 @@ void rotate(float degree, char direction)
     //Define rad
     double rad;
     rad = DEG2RAD(degree);
-
     //Update status
     ros::spinOnce();
     //Record the status
@@ -50,17 +49,13 @@ void rotate(float degree, char direction)
     ros::Publisher vel_pub = nh.advertise<geometry_msgs::Twist>("cmd_vel_mux/input/teleop", 1);
     geometry_msgs::Twist vel;
     //Define the magnitude of linear and angular speed here
-    double angular = ANGULAR_MAX;
+    double angular = (direction == 'l') ? ANGULAR_MAX : - ANGULAR_MAX;
     double linear = 0.0;
     //Define the rotation direction according to the input
-    if (direction == 'r')
-    {
-        angular = angular * -1;
-    }
     //Define 360 degree rotation
     if (degree == 360)
     {
-        while (laserRange < 0.7 || laserRangeLeft < 0.5 || laserRangeRight < 0.5)
+        while (laserRange < 0.7)
         {
             vel.angular.z = angular;
             vel.linear.x = linear;
@@ -126,24 +121,10 @@ void correction()
     }
 
     //Determine if it can go left/right. If not, go to the direction in forward zone
-    if (maxReadingSide > 1.0)
-    {
-        maxIndex = maxIndexSide;
-    }
-    else
-    {
-        maxIndex = maxIndexForward;
-    }
-
-    //Determine the direction and rotate
-    if (maxIndex < directions / 2)
-    {
-        rotate(360 * maxIndex / directions, 'r');
-    }
-    else
-    {
-        rotate(360 * (directions - maxIndex) / directions, 'l');
-    }
+    maxIndex = (maxReadingSide > 1.0) ? maxIndexSide : maxIndexForward;
+    double rotationRatio = (maxIndex < directions / 2) ? 360 * maxIndex / directions : 360 * (directions - maxIndex) / directions;
+    char rotationDirection = (maxIndex < directions / 2) ? 'r' : 'l';
+    rotate(rotationRatio, rotationDirection);
 }
 
 //Bumper callback function
@@ -276,18 +257,17 @@ int main(int argc, char **argv)
         mode = ((secondsElapsed > 20 && secondsElapsed < 60) ||(secondsElapsed > 120 && secondsElapsed < 180) || (secondsElapsed > 240 && secondsElapsed < 300) ||
                 (secondsElapsed > 420 && secondsElapsed < 480)) ? 1 : 2;
 
-        if ((distFromLastSpin() > 1 && mode == 2) || (distFromLastSpin() > 9 && mode == 1)){
+        if ((distFromLastSpin() > 2 && mode == 2) || (distFromLastSpin() > 5 && mode == 1)){
             xLastSpin = posX;
             yLastSpin = posY;
             correction();
         }
 
-        //Correction counter
 
         //Print Robot Info
-        //ROS_INFO("Position:(%f,%f) Orientation: %f degrees. Range: %f,", posX, posY, yaw * 180 / pi, laserRange);
-        //ROS_INFO("Range:%f", laserRange);
-        //ROS_INFO("LeftIndex:%f,RightIndex: %f",leftIndex, rightIndex);
+        ROS_INFO("Position:(%f,%f) Orientation: %f degrees. Range: %f,", posX, posY, yaw * 180 / pi, laserRange);
+        ROS_INFO("Range:%f", laserRange);
+        ROS_INFO("LeftIndex:%f,RightIndex: %f",leftIndex, rightIndex);
 
         ros::spinOnce();
 
@@ -301,7 +281,7 @@ int main(int argc, char **argv)
             lastX = posX;
             lastY = posY;
             //Moving Back
-            linear = -0.2;
+            linear = -LINEAR_MAX_NEAR_OBSTACLE;
             angular = 0;
             while (distFromLastLocation() < 0.1)
             {
@@ -314,20 +294,20 @@ int main(int argc, char **argv)
             ROS_INFO("calling rotation");
 
             if (bumperRight){
-                rotate(30, 'l');
+                rotate(20, 'l');
             }
             else if (bumperLeft){
-                rotate(30, 'r');
+                rotate(20, 'r');
             }
             else{
                 if(laserRangeLeft > laserRangeRight){
-                    rotate(30, 'l');
+                    rotate(20, 'l');
                 } else{
-                    rotate(30, 'r');
+                    rotate(20, 'r');
                 }
             }
             //Moving Forward
-            linear = 0.2;
+            linear = LINEAR_MAX_NEAR_OBSTACLE;
             lastX = posX;
             lastY = posY;
             while (distFromLastLocation() < 0.15)
@@ -392,6 +372,7 @@ int main(int argc, char **argv)
 
         else if (!isBumperPressed() && laserRange < 0.5)
         {
+            linear = LINEAR_MAX_NEAR_OBSTACLE;
             ROS_INFO("stuck in else if statement");
             //Determine which side has more space
             if (laserRangeRight > laserRangeLeft)
@@ -426,7 +407,7 @@ int main(int argc, char **argv)
             else if (0.55 < laserRange <= 0.6)
                 linear = 0.5 * LINEAR_MAX;
             else if (0.5 <= laserRange <= 0.55)
-                linear = 0.2 * LINEAR_MAX;
+                linear = LINEAR_MAX_NEAR_OBSTACLE;
         }
 
         //write the defined speed to the robot
