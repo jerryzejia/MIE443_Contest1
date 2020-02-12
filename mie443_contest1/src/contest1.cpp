@@ -37,6 +37,7 @@ int rightIndex = 0, leftIndex = 0;
 //When the degree input is 360, the robot will rotate until all the three laser ranges are greater than 0.5
 void rotate(float degree, char direction)
 {
+    ROS_INFO("rotation starting");
     //Define rad
     double rad;
     rad = DEG2RAD(degree);
@@ -268,15 +269,14 @@ int main(int argc, char **argv)
     xLastSpin = posX;
     yLastSpin = posY;
 
-    while (ros::ok() && secondsElapsed <= 480)
-    {
+    while (ros::ok() && secondsElapsed <= 480){
         //Mode switch - 120-240s mode 1, else mode 2
         //Mode 1 - goes straight, stop when front range is too low.
         //Mode 2 - corrects the distance when it is going straight. Run correction function after it has passed a certain distance
-        mode = ((secondsElapsed > 0 && secondsElapsed < 60) || (secondsElapsed > 120 && secondsElapsed < 180) ||
+        mode = ((secondsElapsed > 20 && secondsElapsed < 60) ||(secondsElapsed > 120 && secondsElapsed < 180) || (secondsElapsed > 240 && secondsElapsed < 300) ||
                 (secondsElapsed > 420 && secondsElapsed < 480)) ? 1 : 2;
 
-        if ((distFromLastSpin() > 2.5 && mode == 2) || (distFromLastSpin() > 7 && mode == 1)){
+        if ((distFromLastSpin() > 1 && mode == 2) || (distFromLastSpin() > 9 && mode == 1)){
             xLastSpin = posX;
             yLastSpin = posY;
             correction();
@@ -297,12 +297,13 @@ int main(int argc, char **argv)
 
         if (isBumperPressed())
         {
+            ROS_INFO("bumping");
             lastX = posX;
             lastY = posY;
             //Moving Back
             linear = -0.2;
             angular = 0;
-            while (distFromLastLocation() < 0.15)
+            while (distFromLastLocation() < 0.1)
             {
                 vel.angular.z = angular;
                 vel.linear.x = linear;
@@ -310,10 +311,21 @@ int main(int argc, char **argv)
                 ros::spinOnce();
             }
             linear = 0;
-            if (bumperRight)
-                rotate(20, 'l');
-            else if (bumperLeft)
-                rotate(20, 'r');
+            ROS_INFO("calling rotation");
+
+            if (bumperRight){
+                rotate(30, 'l');
+            }
+            else if (bumperLeft){
+                rotate(30, 'r');
+            }
+            else{
+                if(laserRangeLeft > laserRangeRight){
+                    rotate(30, 'l');
+                } else{
+                    rotate(30, 'r');
+                }
+            }
             //Moving Forward
             linear = 0.2;
             lastX = posX;
@@ -336,24 +348,30 @@ int main(int argc, char **argv)
             //Free Space movement
             //Difference between mode 1 and 2
         else if (!isBumperPressed() && laserRange > 0.7){
+            ROS_INFO("Free Space, %f", laserRange);
             if (mode == 1) //Define mode 1
             {
                 //Define mode 1 speed
-                angular = 0.0;
                 linear = LINEAR_MAX;
                 //Correction when it is too close to walls
-                angular = (laserRangeLeft < 0.5) ? -ANGULAR_MAX * (0.7 - laserRangeLeft) : ANGULAR_MAX * (0.7 - laserRangeRight);
+                angular = (laserRangeLeft < 0.5) ? -ANGULAR_MAX  : 0 ;
+                angular = (laserRangeRight < 0.5) ? ANGULAR_MAX  : 0 ;
+
             }
             else if (mode == 2){
+                ROS_INFO("Mode 2");
                 //Define linear speed
                 angular = 0.0;
                 linear = LINEAR_MAX;
+
                 //Overwrite the angular speed when the distances from two sides are different more than 0.2
                 if (laserRangeLeft - laserRangeRight > 0.2)
                     angular = (laserRangeLeft - laserRangeRight) / laserRangeLeft * (0.5 * ANGULAR_MAX);
                 else if (laserRangeRight - laserRangeLeft > 0.2)
                     angular = (laserRangeRight - laserRangeLeft) / laserRangeRight * (-0.5 * ANGULAR_MAX);
 
+                ROS_INFO("Index Offset %d, %d", leftIndexOffset, rightIndexOffset);
+                ROS_INFO("Index %d, %d", leftIndex, rightIndex);
                 //Determines where distance values on both sides are located, and if a large discrepancy, turns
                 if (leftIndexOffset + 100 < rightIndexOffset){
                     ROS_INFO("changing offset to left");
@@ -390,10 +408,14 @@ int main(int argc, char **argv)
         {
             ROS_INFO("stuck in else statement");
             //Tries to stabilize robot when close to hitting wall
-            if (laserRangeLeft - laserRangeRight > 0.2)
+            if (laserRangeLeft - laserRangeRight > 0.2){
+                ROS_INFO("moving to the left %f", angular);
                 angular = (laserRangeLeft - laserRangeRight) / laserRangeLeft * (0.75 * ANGULAR_MAX);
-            else if (laserRangeRight - laserRangeLeft > 0.2)
+            }
+            else if (laserRangeRight - laserRangeLeft > 0.2){
+                ROS_INFO("moving to the right %f", angular);
                 angular = (laserRangeRight - laserRangeLeft) / laserRangeRight * (-0.75 * ANGULAR_MAX);
+            }
             else
                 angular = 0.0;
 
